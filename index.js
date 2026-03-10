@@ -7,36 +7,33 @@ const http = require('http');
 const https = require('https');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
-// Servidor dummy para Render/Heroku (Evita el error de port binding)
+// Servidor dummy para Render
 http.createServer((req, res) => {
-    res.write('El bot está vivo!');
+    res.write('OK');
     res.end();
 }).listen(process.env.PORT || 10000);
 
-// --- Mecanismo ANTI-SLEEP (Auto-Ping) ---
+// Anti-sleep
 const URL_RENDER = 'https://la-lol-se-al.onrender.com';
 setInterval(() => {
-    https.get(URL_RENDER, (res) => {
-        console.log('📡 Auto-ping enviado...');
-    }).on('error', (err) => console.error('Error auto-ping:', err.message));
+    https.get(URL_RENDER, () => { }).on('error', () => { });
 }, 600000);
 
-// Configuración del bot con los intents requeridos
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates // Necesario para entrar al canal de voz
+        GatewayIntentBits.GuildVoiceStates
     ],
 });
 
 client.once(Events.ClientReady, (readyClient) => {
-    console.log(`🤖 Bot listo! Autenticado como: ${readyClient.user.tag}`);
+    console.log(`🤖 Bot listo: ${readyClient.user.tag}`);
 });
 
-// Función para reproducir el sonido de pánico
+// Sonido de pánico
 async function playPanicSound(channel) {
     try {
         const connection = joinVoiceChannel({
@@ -46,23 +43,13 @@ async function playPanicSound(channel) {
         });
 
         const player = createAudioPlayer();
-        const resource = createAudioResource('https://www.myinstants.com/media/sounds/teemo-laugh.mp3');
+        const resource = createAudioResource('https://www.myinstants.com/en/instant/teemo-laugh/?utm_source=copy&utm_medium=share');
 
         player.play(resource);
         connection.subscribe(player);
-
-        player.on(AudioPlayerStatus.Idle, () => {
-            connection.destroy();
-        });
-
-        // Autocerrar si algo falla o tarda mucho
-        setTimeout(() => {
-            if (connection) connection.destroy();
-        }, 15000);
-
-    } catch (error) {
-        console.error('Error en Voice:', error);
-    }
+        player.on(AudioPlayerStatus.Idle, () => connection.destroy());
+        setTimeout(() => { if (connection) connection.destroy(); }, 15000);
+    } catch (e) { console.error(e); }
 }
 
 client.on(Events.MessageCreate, async (message) => {
@@ -75,27 +62,21 @@ client.on(Events.MessageCreate, async (message) => {
         const role = guild.roles.cache.find(r => r.name.toLowerCase() === 'lol');
         if (!role) return message.reply('❌ No se encontró el rol "lol".');
 
-        // Estado local de la señal activa
         let playersByRole = {
-            '🛡️ TOP': null,
-            '⚔️ JNG': null,
-            '🧙 MID': null,
-            '🏹 ADC': null,
-            '💉 SUP': null
+            '🛡️ TOP': null, '⚔️ JNG': null, '🧙 MID': null, '🏹 ADC': null, '💉 SUP': null
         };
 
         const createEmbed = () => {
-            let list = Object.entries(playersByRole).map(([lane, userId]) => {
-                return `**${lane}:** ${userId ? `<@${userId}>` : '*Buscando...*'}`;
-            }).join('\n');
+            let list = Object.entries(playersByRole).map(([lane, userId]) =>
+                `**${lane}:** ${userId ? `<@${userId}>` : '*Buscando...*'}`
+            ).join('\n');
 
             return new EmbedBuilder()
                 .setColor(0xFF4500)
                 .setTitle('🚀 ¡LA SEÑAL HA SIDO ACTIVADA!')
                 .setDescription(`**POSICIONES EN LA GRIETA:**\n${list}\n\n*Haz clic en "¡VOY!" para elegir tu línea.*`)
                 .setImage('https://i.imgur.com/AfFp7pu.png')
-                .setTimestamp()
-                .setFooter({ text: 'Protocolo de Emergencia LOL', iconURL: client.user.displayAvatarURL() });
+                .setTimestamp();
         };
 
         const mainRow = new ActionRowBuilder().addComponents(
@@ -104,88 +85,85 @@ client.on(Events.MessageCreate, async (message) => {
             new ButtonBuilder().setCustomId('panico_lol').setLabel('PANICO 😱').setStyle(ButtonStyle.Secondary)
         );
 
-        const initialMsg = await message.channel.send('📡 **Detectando señal...**');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await initialMsg.delete();
-
         const mainMsg = await message.channel.send({
             content: `⚠️ **¡ATENCIÓN!** ${role}`,
             embeds: [createEmbed()],
             components: [mainRow]
         });
 
-        // Notificaciones masivas
+        // Menciones rápidas
         await guild.members.fetch();
-        const membersWithRole = role.members.filter(m => !m.user.bot);
-        if (membersWithRole.size > 0) {
-            const mentions = membersWithRole.map(m => `<@${m.id}>`).join(' ');
-            message.channel.send(`⚔️ **Convocando:** ${mentions}`).then(m => setTimeout(() => m.delete(), 5000));
+        const members = role.members.filter(m => !m.user.bot);
+        if (members.size > 0) {
+            const mText = members.map(m => `<@${m.id}>`).join(' ');
+            message.channel.send(`⚔️ **Convocando:** ${mText}`).then(msg => setTimeout(() => msg.delete(), 5000));
         }
 
-        // Colector de interacciones
         const collector = mainMsg.createMessageComponentCollector({ time: 600000 });
 
         collector.on('collect', async i => {
-            // --- BOTÓN VOY ---
-            if (i.customId === 'voy_lol') {
-                const laneRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('lane_TOP').setLabel('TOP').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('lane_JNG').setLabel('JNG').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('lane_MID').setLabel('MID').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('lane_ADC').setLabel('ADC').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('lane_SUP').setLabel('SUP').setStyle(ButtonStyle.Primary)
-                );
-                await i.reply({ content: '⚔️ **¿Qué línea vas a jugar?**', components: [laneRow], ephemeral: true });
-            }
+            try {
+                // --- BOTÓN VOY ---
+                if (i.customId === 'voy_lol') {
+                    const laneRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('l_TOP').setLabel('TOP').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('l_JNG').setLabel('JNG').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('l_MID').setLabel('MID').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('l_ADC').setLabel('ADC').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('l_SUP').setLabel('SUP').setStyle(ButtonStyle.Primary)
+                    );
 
-            // --- BOTÓN NO PUEDO ---
-            else if (i.customId === 'no_puedo_lol') {
-                Object.keys(playersByRole).forEach(key => {
-                    if (playersByRole[key] === i.user.id) playersByRole[key] = null;
-                });
-                await mainMsg.edit({ embeds: [createEmbed()] });
-                await i.reply({ content: 'Entendido. Borrado de la lista.', ephemeral: true });
-            }
+                    const filter = (btn) => btn.user.id === i.user.id;
+                    const response = await i.reply({ content: '⚔️ **Elige tu línea:**', components: [laneRow], ephemeral: true });
 
-            // --- BOTÓN PÁNICO ---
-            else if (i.customId === 'panico_lol') {
-                const voiceChannel = i.member.voice.channel;
-                if (voiceChannel) {
-                    await i.reply({ content: '🔔 **Enviando señal sonora al canal de voz...**', ephemeral: true });
-                    playPanicSound(voiceChannel);
-                } else {
-                    await i.reply({ content: '❌ Debes estar en un canal de voz para usar esto.', ephemeral: true });
-                }
-            }
+                    // Sub-colector para la respuesta efímera
+                    const laneCollector = response.createMessageComponentCollector({ filter, time: 30000 });
 
-            // --- BOTONES DE LÍNEA ---
-            else if (i.customId.startsWith('lane_')) {
-                const selectedLane = i.customId.replace('lane_', '');
-                const fullLaneKey = Object.keys(playersByRole).find(k => k.includes(selectedLane));
+                    laneCollector.on('collect', async b => {
+                        const laneName = b.customId.replace('l_', '');
+                        const fullKey = Object.keys(playersByRole).find(k => k.includes(laneName));
 
-                if (playersByRole[fullLaneKey] && playersByRole[fullLaneKey] !== i.user.id) {
-                    return i.update({ content: `⚠️ ${selectedLane} ya está ocupado por <@${playersByRole[fullLaneKey]}>`, components: [] });
+                        if (playersByRole[fullKey] && playersByRole[fullKey] !== b.user.id) {
+                            return b.update({ content: `⚠️ ${laneName} ya está ocupado.`, components: [] });
+                        }
+
+                        // Limpiar posición anterior
+                        Object.keys(playersByRole).forEach(k => { if (playersByRole[k] === b.user.id) playersByRole[k] = null; });
+
+                        playersByRole[fullKey] = b.user.id;
+                        await mainMsg.edit({ embeds: [createEmbed()] });
+                        await b.update({ content: `✅ ¡Confirmado en **${laneName}**!`, components: [] });
+                        laneCollector.stop();
+                    });
                 }
 
-                // Mover al jugador si ya estaba en otra
-                Object.keys(playersByRole).forEach(key => {
-                    if (playersByRole[key] === i.user.id) playersByRole[key] = null;
-                });
+                // --- BOTÓN NO PUEDO ---
+                else if (i.customId === 'no_puedo_lol') {
+                    Object.keys(playersByRole).forEach(k => { if (playersByRole[k] === i.user.id) playersByRole[k] = null; });
+                    await mainMsg.edit({ embeds: [createEmbed()] });
+                    await i.reply({ content: 'Borrado de la lista.', ephemeral: true });
+                }
 
-                playersByRole[fullLaneKey] = i.user.id;
-                await mainMsg.edit({ embeds: [createEmbed()] });
-                await i.update({ content: `✅ ¡Vas a jugar **${selectedLane}**!`, components: [] });
-            }
+                // --- BOTÓN PÁNICO ---
+                else if (i.customId === 'panico_lol') {
+                    if (i.member.voice.channel) {
+                        await i.reply({ content: '🔔 Alerta enviada.', ephemeral: true });
+                        playPanicSound(i.member.voice.channel);
+                    } else {
+                        await i.reply({ content: '❌ Entra a un canal de voz primero.', ephemeral: true });
+                    }
+                }
+            } catch (err) { console.error('Error Interaction:', err); }
         });
 
         collector.on('end', () => {
-            const rowDisabled = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('d').setLabel('Señal Expirada').setStyle(ButtonStyle.Secondary).setDisabled(true)
+            const rowD = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('exp').setLabel('Señal Finalizada').setStyle(ButtonStyle.Secondary).setDisabled(true)
             );
-            mainMsg.edit({ components: [rowDisabled] }).catch(() => { });
+            mainMsg.edit({ components: [rowD] }).catch(() => { });
         });
     }
 });
 
-process.on('unhandledRejection', error => console.error('Error detectado:', error));
+process.on('unhandledRejection', e => console.error(e));
 client.login(process.env.DISCORD_TOKEN);
