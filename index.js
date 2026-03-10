@@ -1,5 +1,12 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const http = require('http');
+
+// Servidor dummy para Render/Heroku (Evita el error de port binding)
+http.createServer((req, res) => {
+    res.write('El bot está vivo!');
+    res.end();
+}).listen(process.env.PORT || 10000);
 
 // Configuración del bot con los intents requeridos
 const client = new Client({
