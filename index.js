@@ -43,7 +43,7 @@ async function playPanicSound(channel) {
         });
 
         const player = createAudioPlayer();
-        const resource = createAudioResource('https://www.myinstants.com/en/instant/teemo-laugh/?utm_source=copy&utm_medium=share');
+        const resource = createAudioResource('https://www.myinstants.com/media/sounds/siren.mp3');
 
         player.play(resource);
         connection.subscribe(player);
@@ -116,25 +116,23 @@ client.on(Events.MessageCreate, async (message) => {
                     const filter = (btn) => btn.user.id === i.user.id;
                     const response = await i.reply({ content: '⚔️ **Elige tu línea:**', components: [laneRow], ephemeral: true });
 
-                    // Sub-colector para la respuesta efímera
-                    const laneCollector = response.createMessageComponentCollector({ filter, time: 30000 });
-
-                    laneCollector.on('collect', async b => {
+                    try {
+                        const b = await response.awaitMessageComponent({ filter, time: 30000 });
                         const laneName = b.customId.replace('l_', '');
                         const fullKey = Object.keys(playersByRole).find(k => k.includes(laneName));
 
                         if (playersByRole[fullKey] && playersByRole[fullKey] !== b.user.id) {
-                            return b.update({ content: `⚠️ ${laneName} ya está ocupado.`, components: [] });
+                            await b.update({ content: `⚠️ ${laneName} ya está ocupado.`, components: [] });
+                        } else {
+                            Object.keys(playersByRole).forEach(k => { if (playersByRole[k] === b.user.id) playersByRole[k] = null; });
+                            playersByRole[fullKey] = b.user.id;
+                            await mainMsg.edit({ embeds: [createEmbed()] });
+                            await b.update({ content: `✅ ¡Confirmado en **${laneName}**!`, components: [] });
                         }
-
-                        // Limpiar posición anterior
-                        Object.keys(playersByRole).forEach(k => { if (playersByRole[k] === b.user.id) playersByRole[k] = null; });
-
-                        playersByRole[fullKey] = b.user.id;
-                        await mainMsg.edit({ embeds: [createEmbed()] });
-                        await b.update({ content: `✅ ¡Confirmado en **${laneName}**!`, components: [] });
-                        laneCollector.stop();
-                    });
+                    } catch (e) {
+                         // Tiempo expirado u otro error
+                         await i.editReply({ content: '⏱️ Tiempo expirado.', components: [] }).catch(()=>{});
+                    }
                 }
 
                 // --- BOTÓN NO PUEDO ---
